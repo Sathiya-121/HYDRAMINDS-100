@@ -150,7 +150,15 @@ export default function Home() {
     setNote("");
   };
 
-  const key = clean(q);
+  const codes = [
+    ...batches.map((b) => ({ code: b.id, kind: "Batch", label: `${b.product} ${b.source || ""}` })),
+    ...ships.map((x) => ({ code: x.id, kind: "Shipment", label: x.company })),
+    ...sales.map((v) => ({ code: v.id, kind: "Invoice", label: v.customer })),
+  ];
+  const ql = q.trim().toLowerCase();
+  const qc = ql.replace(/[*\s]/g, "");
+  const matches = qc ? codes.filter((c) => c.code.toLowerCase().includes(qc) || c.label.toLowerCase().includes(ql)) : [];
+  const key = codes.some((c) => c.code === clean(q)) ? clean(q) : matches.length === 1 ? matches[0].code : clean(q);
   const fb = batches.find((b) => b.id === key);
   const fv = !fb ? sales.find((v) => v.id === key) : null;
   const fs = !fb ? ships.find((s) => s.id === key || (fv && s.id === fv.shipId)) : null;
@@ -185,6 +193,10 @@ export default function Home() {
           <div className="stat"><b className="bad">{tBad}</b><span>Bad quantity</span></div>
           <div className="stat"><b>{ships.length}</b><span>Shipment barcodes</span></div>
         </div>
+
+        <input value={q} style={{ fontSize: 16, padding: 12 }}
+          onChange={(e) => { setQ(e.target.value); if (e.target.value.trim()) { setTab("Traceability"); setMsg(""); } }}
+          placeholder="Search or scan any barcode: batch, shipment or invoice (name search also works)" />
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {["Batches", "Shipping", "Sales", "Traceability"].map((t) => (
@@ -349,7 +361,7 @@ export default function Home() {
         {tab === "Traceability" && (
           <section className="card">
             <h2>Trace by batch, shipment or invoice barcode</h2>
-            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. B260930001 or S260930001 (a USB barcode scanner types it for you)" />
+            
             <p className="mute">Recent: {[...batches.slice(0, 3).map((b) => b.id), ...ships.slice(0, 3).map((s) => s.id), ...sales.slice(0, 2).map((v) => v.id)].map((c) => (
               <a key={c} href="#" style={{ marginRight: 10 }} onClick={(e) => { e.preventDefault(); setQ(c); }}>{c}</a>
             ))}</p>
@@ -357,6 +369,7 @@ export default function Home() {
             {fb && (
               <div>
                 <h2>Batch {fb.id}</h2>
+                <p><span className="tag">BATCH</span> {fb.product} · {availOf(fb)} {fb.unit} in stock · expiry: {expiry(fb.expiry)}</p>
                 <Barcode value={fb.id} />
                 <div><button className="sm" style={{ marginTop: 8 }} onClick={() => printLabel(fb.id, [fb.product, "Batch " + fb.id, "Mfg " + fb.mfg, "Expiry " + fb.expiry])}>Print label</button></div>
                 <div className="kv">
@@ -383,7 +396,8 @@ export default function Home() {
 
             {fs && (
               <div>
-                <h2>Shipment {fs.id}</h2>
+                <h2>{fv ? "Invoice " + fv.id + " → " : ""}Shipment {fs.id}</h2>
+                <p><span className="tag">SHIPMENT</span> to {fs.company} · quantity {fs.qty} · status: {fs.status}</p>
                 <Barcode value={fs.id} />
                 <div><button className="sm" style={{ marginTop: 8 }} onClick={() => printLabel(fs.id, ["To: " + fs.company, fs.address, "Qty " + fs.qty, "Batch " + fs.batchId])}>Print label</button></div>
                 <div className="kv">
@@ -415,7 +429,18 @@ export default function Home() {
               </div>
             )}
 
-            {key && !fb && !fs && <p className="bad">No batch, shipment or invoice found for “{q}”.</p>}
+            {!fb && !fs && matches.length > 1 && (
+              <div style={{ marginTop: 10 }}>
+                <p className="mute">{matches.length} matches. Pick one:</p>
+                {matches.slice(0, 8).map((c) => (
+                  <div key={c.code} style={{ marginBottom: 6 }}>
+                    <a href="#" onClick={(e) => { e.preventDefault(); setQ(c.code); }}>{c.code}</a>{" "}
+                    <span className="tag">{c.kind}</span> <span className="mute">{c.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {q.trim() && !fb && !fs && matches.length === 0 && <p className="bad">No batch, shipment or invoice found for “{q}”.</p>}
           </section>
         )}
       </main>
