@@ -36,10 +36,10 @@ function checkExpiry(o: Order, minDays: number): { level: "bad" | "warn" | "ok";
   if (o.status === "Cancelled") return { level: "ok", msg: "Cancelled" };
   if (!o.expiry_date || !o.delivery_date) return { level: "warn", msg: "Expiry or delivery date missing" };
   const gap = daysBetween(o.delivery_date, o.expiry_date);
-  if (gap <= 0) return { level: "bad", msg: gap === 0 ? "Expires ON the delivery date" : Expires ${-gap} day(s) BEFORE delivery };
+  if (gap <= 0) return { level: "bad", msg: gap === 0 ? "Expires ON the delivery date" : "Expires " + (-gap) + " day(s) BEFORE delivery" };
   if (o.status !== "Delivered" && daysBetween(today(), o.expiry_date) < 0) return { level: "bad", msg: "Already expired" };
-  if (gap < minDays) return { level: "warn", msg: Only ${gap} day(s) shelf life after delivery };
-  return { level: "ok", msg: ${gap} day(s) shelf life after delivery };
+  if (gap < minDays) return { level: "warn", msg: "Only " + gap + " day(s) shelf life after delivery" };
+  return { level: "ok", msg: gap + " day(s) shelf life after delivery" };
 }
 
 export default function Home() {
@@ -190,8 +190,8 @@ export default function Home() {
                   <div className="img">
                     <img src={preview} alt="upload" />
                     {result?.detections.map((d: any, i: number) => (
-                      <div key={i} className={box ${d.status}}
-                        style={{ left: ${d.box[0] * 100}%, top: ${d.box[1] * 100}%, width: ${d.box[2] * 100}%, height: ${d.box[3] * 100}% }}>
+                      <div key={i} className={"box " + d.status}
+                        style={{ left: (d.box[0] * 100) + "%", top: (d.box[1] * 100) + "%", width: (d.box[2] * 100) + "%", height: (d.box[3] * 100) + "%" }}>
                         <span>{d.label} {d.conf}</span>
                       </div>
                     ))}
@@ -206,7 +206,7 @@ export default function Home() {
                       <div className="stat"><b>{result.yield_pct}%</b><span>Yield</span></div>
                     </div>
                     <p className="mute">
-                      Defects: {Object.keys(result.defects).length ? Object.entries(result.defects).map(([k, v]) => ${k} ×${v}).join(", ") : "none"}
+                      Defects: {Object.keys(result.defects).length ? Object.entries(result.defects).map(([k, v]) => k + " ×" + v).join(", ") : "none"}
                       {" · "}confidence {result.confidence} · mode <span className="tag">{result.mode}</span>
                     </p>
                   </>
@@ -300,7 +300,7 @@ export default function Home() {
                             <td>{o.ship_to_company}<br /><span className="mute">{o.ship_to_person} {o.ship_to_address && "· " + o.ship_to_address}</span></td>
                             <td>{o.delivery_date}</td>
                             <td>{o.expiry_date}</td>
-                            <td><span className={tag ${c.level}}>{c.level === "ok" ? "OK" : c.level === "warn" ? "Warning" : "Critical"}</span><br /><span className="mute">{c.msg}</span></td>
+                            <td><span className={"tag " + c.level}>{c.level === "ok" ? "OK" : c.level === "warn" ? "Warning" : "Critical"}</span><br /><span className="mute">{c.msg}</span></td>
                             <td>
                               <select value={o.status} onChange={(e) => setStatus(o.id, e.target.value as Order["status"])}>
                                 <option>Pending</option><option>Shipped</option><option>Delivered</option><option>Cancelled</option>
