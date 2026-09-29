@@ -25,3 +25,10 @@ td select{padding:4px 6px;font-size:12px}
 .warn{color:#b54708}.alertbox{border-color:var(--bad)}
 .tag.ok{background:#d1fadf;color:#05603a}.tag.warn{background:#fef0c7;color:#b54708}.tag.bad{background:#fee4e2;color:#b42318}
 button.ghost{background:transparent;color:var(--bad);border:1px solid var(--line);margin:0;padding:4px 8px;font-size:12px}
+.form.two{grid-template-columns:1fr 1fr}@media(max-width:800px){.form.two{grid-template-columns:1fr}}
+.tabs{flex-wrap:wrap}
+button.link{background:none;color:var(--acc);border:0;padding:0;margin:0;width:auto;text-decoration:underline}
+button.small{width:auto;margin:0;padding:4px 8px;font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+button.chip{width:auto;margin:0;padding:4px 10px;font-size:12px;background:var(--line);color:var(--ink);border-radius:99px}
+.step{margin:14px 0 4px}.recall{margin-top:12px;padding:10px;border:1px dashed var(--bad);border-radius:8px}
