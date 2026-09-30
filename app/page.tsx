@@ -10,7 +10,7 @@ const P: Record<string, string> = {
 };
 
 function Barcode({ value }: { value: string }) {
-  const txt = "*" + value + "*";
+  const txt = "" + value + "";
   let x = 10;
   const bars: any[] = [];
   for (const ch of txt) {
@@ -24,7 +24,7 @@ function Barcode({ value }: { value: string }) {
     x += 1;
   }
   return (
-    <svg id={"bc-" + value} viewBox={`0 0 ${x + 10} 85`} style={{ background: "#fff", borderRadius: 6, maxWidth: 320, width: "100%" }}>
+    <svg id={"bc-" + value} viewBox={0 0 ${x + 10} 85} style={{ background: "#fff", borderRadius: 6, maxWidth: 320, width: "100%" }}>
       {bars}
       <text x={(x + 10) / 2} y={80} textAnchor="middle" fontSize="11" fontFamily="monospace">{value}</text>
     </svg>
@@ -35,7 +35,7 @@ function printLabel(id: string, lines: string[]) {
   const el = document.getElementById("bc-" + id);
   const w = window.open("", "_blank");
   if (!w || !el) return;
-  w.document.write(`<body style="font-family:sans-serif">${el.outerHTML}<pre>${lines.join("\n")}</pre></body>`);
+  w.document.write(<body style="font-family:sans-serif">${el.outerHTML}<pre>${lines.join("\n")}</pre></body>);
   w.document.close();
   w.print();
 }
@@ -43,8 +43,8 @@ function printLabel(id: string, lines: string[]) {
 function printReport(title: string, head: string[], rows: any[][]) {
   const w = window.open("", "_blank");
   if (!w) return;
-  const td = (c: any) => `<td style="border:1px solid #999;padding:4px">${c}</td>`;
-  w.document.write(`<body style="font-family:sans-serif"><h2>${title}</h2><table style="border-collapse:collapse"><tr>${head.map((h) => `<th style="border:1px solid #999;padding:4px">${h}</th>`).join("")}</tr>${rows.map((x) => "<tr>" + x.map(td).join("") + "</tr>").join("")}</table></body>`);
+  const td = (c: any) => <td style="border:1px solid #999;padding:4px">${c}</td>;
+  w.document.write(<body style="font-family:sans-serif"><h2>${title}</h2><table style="border-collapse:collapse"><tr>${head.map((h) => `<th style="border:1px solid #999;padding:4px">${h}</th>).join("")}</tr>${rows.map((x) => "<tr>" + x.map(td).join("") + "</tr>").join("")}</table></body>`);
   w.document.close();
   w.print();
 }
@@ -59,7 +59,7 @@ const clean = (s: string) => s.trim().toUpperCase().replace(/[^0-9A-Z-]/g, "");
 const expiry = (d: string) => {
   if (!d) return "-";
   const n = Math.ceil((new Date(d).getTime() - Date.now()) / 864e5);
-  return n < 0 ? "EXPIRED" : n <= 7 ? `Expires in ${n} day(s)` : "Valid";
+  return n < 0 ? "EXPIRED" : n <= 7 ? Expires in ${n} day(s) : "Valid";
 };
 
 export default function Home() {
@@ -87,12 +87,17 @@ export default function Home() {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [showN, setShowN] = useState(true);
   const [prod, setProd] = useState<any>({ batchId: "", line: "LINE-01", date: "", expiry: "", incidents: "" });
+  const blankRecipe = { id: "", product: "", yieldQty: "", unit: "kg", method: "", ings: [{ name: "", qty: "", unit: "kg" }] };
+  const [recipes, setRecipes] = useState<any[]>([]);
+  const [rf, setRf] = useState<any>(blankRecipe);
+  const [plan, setPlan] = useState<any>({ recipeId: "", times: "1" });
 
   useEffect(() => {
     try {
       const d = JSON.parse(localStorage.getItem("erp_v2") || "{}");
       setBatches(d.b || []); setShips(d.s || []); setSales(d.v || []);
       setAlerts(JSON.parse(localStorage.getItem("erp_alerts") || "[]"));
+      setRecipes(JSON.parse(localStorage.getItem("erp_recipes") || "[]"));
     } catch {}
   }, []);
 
@@ -114,7 +119,7 @@ export default function Home() {
   const addBatch = () => {
     setJustAdded(null);
     if (result && result.yield_pct < 25) return setMsg("The AI yield is below 25%, so this batch cannot be created. Discard the result and inspect again.");
-    const id = clean(bf.id) || `B${day()}${String(batches.length + 1).padStart(3, "0")}`;
+    const id = clean(bf.id) || B${day()}${String(batches.length + 1).padStart(3, "0")};
     if (!bf.product.trim()) return setMsg("Enter the raw material name.");
     if (batches.some((b) => b.id === id)) return setMsg("That batch barcode already exists.");
     const b = {
@@ -125,7 +130,7 @@ export default function Home() {
     persist([b, ...batches], ships);
     setBf(blank);
     setJustAdded(id);
-    setMsg(`Barcode ${id} generated for ${b.product}.${result ? ` AI counts attached: ${result.good_products} good, ${result.bad_products} bad.` : ""}`);
+    setMsg(Barcode ${id} generated for ${b.product}.${result ? ` AI counts attached: ${result.good_products} good, ${result.bad_products} bad. : ""}`);
     setResult(null); pickFile(null);
   };
 
@@ -136,16 +141,16 @@ export default function Home() {
     const valid = rows.filter((r) => r.company.trim() && +r.qty > 0);
     if (!valid.length) return setMsg("Add at least one company with a quantity.");
     const total = valid.reduce((a, r) => a + +r.qty, 0);
-    if (total > availOf(b)) return setMsg(`Only ${availOf(b)} good products are available in this batch.`);
+    if (total > availOf(b)) return setMsg(Only ${availOf(b)} good products are available in this batch.);
     const t = new Date().toISOString();
     const made = valid.map((r, i) => ({
-      id: `S${day()}${String(ships.length + i + 1).padStart(3, "0")}`, batchId: b.id,
+      id: S${day()}${String(ships.length + i + 1).padStart(3, "0")}, batchId: b.id,
       company: r.company.trim(), address: r.address.trim(), qty: +r.qty, status: "Packed",
       history: [{ status: "Packed", time: t, note: "Shipment created" }],
     }));
     persist(batches, [...made, ...ships]);
     setRows([{ company: "", address: "", qty: "" }]);
-    setMsg(`Created ${made.length} shipment barcode(s): ${made.map((m) => m.id).join(", ")}`);
+    setMsg(Created ${made.length} shipment barcode(s): ${made.map((m) => m.id).join(", ")});
   };
 
   const pickFile = (f: File | null) => {
@@ -162,7 +167,7 @@ export default function Home() {
       if (!r.ok) throw new Error("API error " + r.status);
       const data = await r.json();
       setResult(data);
-      if (data.yield_pct < 25) addAlert(`AI inspection yield ${data.yield_pct}% is below 25% (${data.good_products} good, ${data.bad_products} bad). Batch cannot proceed.`);
+      if (data.yield_pct < 25) addAlert(AI inspection yield ${data.yield_pct}% is below 25% (${data.good_products} good, ${data.bad_products} bad). Batch cannot proceed.);
     } catch (e: any) { setInsErr(e.message); }
     setBusy(false);
   };
@@ -174,9 +179,9 @@ export default function Home() {
     const b = batches.find((x) => x.id === inv.batchId);
     if (!b) return setMsg("Select a batch first.");
     const good = +inv.good || 0;
-    if (good < shippedOf(b.id)) return setMsg(`Good quantity can't be lower than the ${shippedOf(b.id)} already shipped.`);
+    if (good < shippedOf(b.id)) return setMsg(Good quantity can't be lower than the ${shippedOf(b.id)} already shipped.);
     persist(batches.map((x) => x.id === b.id ? { ...x, source: inv.source.trim(), good, bad: +inv.bad || 0, mfg: inv.recDate } : x), ships);
-    setMsg(`Inventory saved for batch ${b.id}. Now enter the production details.`);
+    setMsg(Inventory saved for batch ${b.id}. Now enter the production details.);
     pickProd(b.id); setTab("Production");
   };
 
@@ -190,10 +195,10 @@ export default function Home() {
     const b = batches.find((x) => x.id === prod.batchId);
     if (!b) return setMsg("Select a batch first.");
     if (prod.date && prod.expiry && prod.expiry < prod.date) return setMsg("Expiry date must be after the manufacturing date.");
-    const pid = b.prod?.id || `PRD${day()}${String(batches.filter((x) => x.prod?.id).length + 1).padStart(3, "0")}`;
+    const pid = b.prod?.id || PRD${day()}${String(batches.filter((x) => x.prod?.id).length + 1).padStart(3, "0")};
     persist(batches.map((x) => x.id === b.id ? { ...x, expiry: prod.expiry, prod: { id: pid, line: prod.line, date: prod.date, incidents: prod.incidents.trim(), time: new Date().toISOString() } } : x), ships);
     setProdDone(pid);
-    setMsg(`Production barcode ${pid} generated for batch ${b.id}.`);
+    setMsg(Production barcode ${pid} generated for batch ${b.id}.);
   };
 
   const createSale = () => {
@@ -203,16 +208,16 @@ export default function Home() {
     if (!b) return setMsg("Select a batch to sell from.");
     if (b.expiry && new Date(b.expiry) < new Date()) return setMsg("This batch has expired and cannot be sold.");
     if (!(qty > 0)) return setMsg("Enter a quantity.");
-    if (qty > availOf(b)) return setMsg(`Only ${availOf(b)} ${b.unit || ""} available in this batch.`);
+    if (qty > availOf(b)) return setMsg(Only ${availOf(b)} ${b.unit || ""} available in this batch.);
     const t = new Date().toISOString();
-    const saleId = `INV${day()}${String(sales.length + 1).padStart(3, "0")}`;
-    const shipId = `S${day()}${String(ships.length + 1).padStart(3, "0")}`;
+    const saleId = INV${day()}${String(sales.length + 1).padStart(3, "0")};
+    const shipId = S${day()}${String(ships.length + 1).padStart(3, "0")};
     const ship = { id: shipId, batchId: b.id, company: sf.customer.trim(), address: sf.address.trim(), qty, status: "Packed", saleId,
       history: [{ status: "Packed", time: t, note: "Created from invoice " + saleId }] };
     const sale = { id: saleId, customer: sf.customer.trim(), address: sf.address.trim(), batchId: b.id, qty, price, total: qty * price, shipId, created: t };
     persist(batches, [ship, ...ships], [sale, ...sales]);
     setSf(blankSale);
-    setMsg(`Invoice ${saleId} created with shipment barcode ${shipId}. Stock reduced.`);
+    setMsg(Invoice ${saleId} created with shipment barcode ${shipId}. Stock reduced.);
   };
 
   const advance = (id: string, status: string) => {
@@ -221,9 +226,73 @@ export default function Home() {
     setNote("");
   };
 
+  // ---------- Recipes & ingredients ----------
+  const norm = (t: string) => (t || "").trim().toLowerCase();
+  const rawNames = Array.from(new Set(batches.map((b) => b.product)));
+  const saveRecipes = (next: any[]) => {
+    setRecipes(next);
+    try { localStorage.setItem("erp_recipes", JSON.stringify(next)); } catch {}
+  };
+  // Available stock of an ingredient: good quantity minus shipped, from batches that have not expired
+  const stockFor = (name: string, unit: string) => {
+    const list = batches.filter((b) => norm(b.product) === norm(name));
+    const usable = list.filter((b) => norm(b.unit) === norm(unit) && !(b.expiry && new Date(b.expiry) < new Date()));
+    return {
+      qty: usable.reduce((a, b) => a + availOf(b), 0),
+      found: list.length > 0,
+      mismatch: list.some((b) => norm(b.unit) !== norm(unit)),
+    };
+  };
+  const upIng = (i: number, k: string, v: string) =>
+    setRf({ ...rf, ings: rf.ings.map((x: any, j: number) => (j === i ? { ...x, [k]: v } : x)) });
+  const saveRecipe = () => {
+    const ings = rf.ings
+      .filter((g: any) => g.name.trim() && +g.qty > 0)
+      .map((g: any) => ({ name: g.name.trim(), qty: +g.qty, unit: g.unit.trim() || "kg" }));
+    if (!rf.product.trim()) return setMsg("Enter the product name for this recipe.");
+    if (!(+rf.yieldQty > 0)) return setMsg("Enter how much one recipe batch produces.");
+    if (!ings.length) return setMsg("Add at least one ingredient with a quantity.");
+    if (recipes.some((r) => r.id !== rf.id && norm(r.product) === norm(rf.product)))
+      return setMsg("A recipe for this product already exists. Edit it instead.");
+    const rec = {
+      id: rf.id || "RCP" + day() + String(Date.now()).slice(-4),
+      product: rf.product.trim(), yieldQty: +rf.yieldQty, unit: rf.unit.trim() || "kg",
+      method: rf.method.trim(), ings, updated: new Date().toISOString(),
+    };
+    saveRecipes(rf.id ? recipes.map((r) => (r.id === rf.id ? rec : r)) : [rec, ...recipes]);
+    setMsg("Recipe " + rec.id + " saved for " + rec.product + " with " + ings.length + " ingredient(s).");
+    setRf(blankRecipe);
+    setPlan({ recipeId: rec.id, times: "1" });
+  };
+  const editRecipe = (r: any) => {
+    setRf({
+      id: r.id, product: r.product, yieldQty: String(r.yieldQty), unit: r.unit, method: r.method || "",
+      ings: r.ings.map((g: any) => ({ name: g.name, qty: String(g.qty), unit: g.unit })),
+    });
+    setMsg("Editing recipe " + r.id + ". Change the form above and press Save recipe.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const delRecipe = (id: string) => {
+    if (!confirm("Delete this recipe?")) return;
+    saveRecipes(recipes.filter((r) => r.id !== id));
+    if (plan.recipeId === id) setPlan({ recipeId: "", times: "1" });
+    if (rf.id === id) setRf(blankRecipe);
+  };
+  const pr = recipes.find((r) => r.id === plan.recipeId);
+  const times = Math.max(+plan.times || 0, 0);
+  const round2 = (n: number) => Number(n.toFixed(2));
+  const need = pr
+    ? pr.ings.map((g: any) => {
+        const st = stockFor(g.name, g.unit);
+        const req = g.qty * times;
+        return { ...g, req, have: st.qty, found: st.found, mismatch: st.mismatch, short: Math.max(req - st.qty, 0) };
+      })
+    : [];
+  const maxBatches = pr && pr.ings.length ? Math.min(...pr.ings.map((g: any) => Math.floor(stockFor(g.name, g.unit).qty / g.qty))) : 0;
+
   const codes = [
-    ...batches.map((b) => ({ code: b.id, kind: "Batch", label: `${b.product} ${b.source || ""}` })),
-    ...batches.filter((b) => b.prod?.id).map((b) => ({ code: b.prod.id, kind: "Production", label: `${b.product} ${b.prod.line}` })),
+    ...batches.map((b) => ({ code: b.id, kind: "Batch", label: ${b.product} ${b.source || ""} })),
+    ...batches.filter((b) => b.prod?.id).map((b) => ({ code: b.prod.id, kind: "Production", label: ${b.product} ${b.prod.line} })),
     ...ships.map((x) => ({ code: x.id, kind: "Shipment", label: x.company })),
     ...sales.map((v) => ({ code: v.id, kind: "Invoice", label: v.customer })),
   ];
@@ -254,7 +323,8 @@ export default function Home() {
         .sm{width:auto;margin:0;padding:4px 10px;font-size:12px}
         .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:12px 0}
         .r3{display:grid;grid-template-columns:1.2fr 1.6fr .6fr;gap:8px;margin-bottom:8px}
-        @media(max-width:700px){.f,.r3{grid-template-columns:1fr}}
+        .r4{display:grid;grid-template-columns:1.6fr .7fr .7fr auto;gap:8px;margin-bottom:8px}
+        @media(max-width:700px){.f,.r3{grid-template-columns:1fr}.r4{grid-template-columns:1fr 1fr}}
         .img{position:relative;display:inline-block;max-width:100%}.img img{max-width:100%;display:block;border-radius:8px}
         .box{position:absolute;border:2px solid;font-size:10px;color:#fff}.box span{position:absolute;top:-16px;left:-2px;padding:0 4px}
         .box.good{border-color:var(--good)}.box.good span{background:var(--good)}.box.bad{border-color:var(--bad)}.box.bad span{background:var(--bad)}
@@ -262,7 +332,7 @@ export default function Home() {
       <header>
         <h1>Cloud ERP · Batch &amp; Shipment Barcodes</h1>
         <button className="sm" style={{ background: "var(--bad)" }}
-          onClick={() => { if (confirm("Clear all data?")) { persist([], [], []); setAlerts([]); try { localStorage.removeItem("erp_alerts"); } catch {} } }}>Reset data</button>
+          onClick={() => { if (confirm("Clear all data?")) { persist([], [], []); setAlerts([]); saveRecipes([]); try { localStorage.removeItem("erp_alerts"); } catch {} } }}>Reset data</button>
       </header>
       <main>
         <div className="stats" style={{ marginBottom: 0 }}>
@@ -286,7 +356,7 @@ export default function Home() {
               <div style={{ marginTop: 8 }}>
                 {alerts.map((a) => (
                   <div key={a.id} className="bad" style={{ marginBottom: 6 }}>
-                    ⚠ {a.text} <span className="mute">{new Date(a.time).toLocaleString()}</span>{" "}
+                    ⚠️ {a.text} <span className="mute">{new Date(a.time).toLocaleString()}</span>{" "}
                     <button className="sm" onClick={() => saveAlerts(alerts.filter((x) => x.id !== a.id))}>Dismiss</button>
                   </div>
                 ))}
@@ -371,8 +441,8 @@ export default function Home() {
                 <div className="img">
                   <img src={preview} alt="upload" />
                   {result?.detections.map((d: any, i: number) => (
-                    <div key={i} className={`box ${d.status}`}
-                      style={{ left: `${d.box[0] * 100}%`, top: `${d.box[1] * 100}%`, width: `${d.box[2] * 100}%`, height: `${d.box[3] * 100}%` }}>
+                    <div key={i} className={box ${d.status}}
+                      style={{ left: ${d.box[0] * 100}%, top: ${d.box[1] * 100}%, width: ${d.box[2] * 100}%, height: ${d.box[3] * 100}% }}>
                       <span>{d.label}</span>
                     </div>
                   ))}
@@ -386,7 +456,7 @@ export default function Home() {
                     <div className="stat"><b className="bad">{result.bad_products}</b><span>Bad</span></div>
                     <div className="stat"><b>{result.yield_pct}%</b><span>Yield</span></div>
                   </div>
-                  <p className="mute">Defects: {Object.keys(result.defects).length ? Object.entries(result.defects).map(([k, v]) => `${k} ×${v}`).join(", ") : "none"} · confidence {result.confidence} · mode <span className="tag">{result.mode}</span></p>
+                  <p className="mute">Defects: {Object.keys(result.defects).length ? Object.entries(result.defects).map(([k, v]) => ${k} ×${v}).join(", ") : "none"} · confidence {result.confidence} · mode <span className="tag">{result.mode}</span></p>
                   {result.yield_pct > 50 && (
                     <>
                       <p className="good"><b>Pass:</b> yield {result.yield_pct}% is above 50%. This batch can proceed.</p>
@@ -449,6 +519,98 @@ export default function Home() {
                 </div>
               )}
             </section>
+            <section className="card">
+              <h2>{rf.id ? "Edit recipe " + rf.id : "Add a product recipe"}</h2>
+              <div className="f">
+                <div><label>Product name</label><input value={rf.product} onChange={(e) => setRf({ ...rf, product: e.target.value })} placeholder="e.g. Tomato Ketchup" /></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div><label>One recipe makes</label><input type="number" min="0" value={rf.yieldQty} onChange={(e) => setRf({ ...rf, yieldQty: e.target.value })} placeholder="100" /></div>
+                  <div><label>Unit</label><input value={rf.unit} onChange={(e) => setRf({ ...rf, unit: e.target.value })} /></div>
+                </div>
+              </div>
+              <p className="lbl">Ingredients needed for one recipe (raw materials from your batches)</p>
+              <datalist id="rawnames">{rawNames.map((n) => <option key={n} value={n} />)}</datalist>
+              {rf.ings.map((g: any, i: number) => (
+                <div className="r4" key={i}>
+                  <input list="rawnames" placeholder="Ingredient (e.g. Tomatoes)" value={g.name} onChange={(e) => upIng(i, "name", e.target.value)} />
+                  <input type="number" min="0" placeholder="Qty" value={g.qty} onChange={(e) => upIng(i, "qty", e.target.value)} />
+                  <input placeholder="Unit" value={g.unit} onChange={(e) => upIng(i, "unit", e.target.value)} />
+                  <button className="sm" disabled={rf.ings.length === 1} style={{ background: "var(--card)", color: "var(--ink)", border: "1px solid var(--line)" }}
+                    onClick={() => setRf({ ...rf, ings: rf.ings.filter((_: any, j: number) => j !== i) })}>✕</button>
+                </div>
+              ))}
+              <button className="sm" style={{ background: "var(--card)", color: "var(--ink)", border: "1px solid var(--line)" }}
+                onClick={() => setRf({ ...rf, ings: [...rf.ings, { name: "", qty: "", unit: "kg" }] })}>+ Add ingredient</button>
+              <label className="lbl" style={{ marginTop: 12 }}>Method / notes (optional)</label>
+              <textarea rows={3} value={rf.method} onChange={(e) => setRf({ ...rf, method: e.target.value })} placeholder="Cook at 90°C for 30 min, add sugar and acid, fill hot..." />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={saveRecipe}>Save recipe</button>
+                {rf.id && <button style={{ background: "var(--card)", color: "var(--ink)", border: "1px solid var(--line)" }} onClick={() => { setRf(blankRecipe); setMsg(""); }}>Cancel edit</button>}
+              </div>
+            </section>
+
+            <section className="card">
+              <h2>Recipes ({recipes.length})</h2>
+              {recipes.length === 0 ? <p className="mute">No recipes yet.</p> : (
+                <div style={{ overflowX: "auto" }}>
+                  <table>
+                    <thead><tr><th>Recipe</th><th>Product</th><th>Makes</th><th>Ingredients (per recipe)</th><th>Method</th><th></th></tr></thead>
+                    <tbody>
+                      {recipes.map((r) => (
+                        <tr key={r.id}>
+                          <td>{r.id}</td><td>{r.product}</td><td>{r.yieldQty} {r.unit}</td>
+                          <td>{r.ings.map((g: any) => g.name + " " + g.qty + " " + g.unit).join(", ")}</td>
+                          <td>{r.method || "-"}</td>
+                          <td>
+                            <button className="sm" onClick={() => { setPlan({ recipeId: r.id, times: "1" }); }}>Check stock</button>{" "}
+                            <button className="sm" onClick={() => editRecipe(r)}>Edit</button>{" "}
+                            <button className="sm" style={{ background: "var(--bad)" }} onClick={() => delRecipe(r.id)}>Delete</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {recipes.length > 0 && (
+              <section className="card">
+                <h2>Ingredient stock check</h2>
+                <div className="f">
+                  <div><label>Recipe</label>
+                    <select value={plan.recipeId} onChange={(e) => setPlan({ ...plan, recipeId: e.target.value })}>
+                      <option value="">Select recipe</option>
+                      {recipes.map((r) => <option key={r.id} value={r.id}>{r.product} (makes {r.yieldQty} {r.unit})</option>)}
+                    </select></div>
+                  <div><label>Number of recipe batches to make</label><input type="number" min="1" value={plan.times} onChange={(e) => setPlan({ ...plan, times: e.target.value })} /></div>
+                </div>
+                {pr && (
+                  <>
+                    <p>Output: <b>{round2(pr.yieldQty * times)} {pr.unit}</b> of {pr.product}. Stock covers up to <b className={maxBatches >= times ? "good" : "bad"}>{maxBatches} batch(es)</b>.</p>
+                    <div style={{ overflowX: "auto" }}>
+                      <table>
+                        <thead><tr><th>Ingredient</th><th>Needed</th><th>Available</th><th>Status</th></tr></thead>
+                        <tbody>
+                          {need.map((g: any, i: number) => (
+                            <tr key={i}>
+                              <td>{g.name}</td><td>{round2(g.req)} {g.unit}</td><td>{round2(g.have)} {g.unit}</td>
+                              <td>
+                                {!g.found ? <span className="bad">Not in inventory</span>
+                                  : g.short > 0 ? <span className="bad">Short by {round2(g.short)} {g.unit}</span>
+                                  : <span className="good">OK</span>}
+                                {g.found && g.mismatch && <span className="mute"> · some batches use a different unit</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="mute">Available = good quantity minus shipped, from batches that have not expired.</p>
+                  </>
+                )}
+              </section>
+            )}
           </>
         )}
 
@@ -625,9 +787,9 @@ export default function Home() {
                 <div><button className="sm" style={{ marginTop: 8 }} onClick={() => printLabel(fb.id, [fb.product, "Batch " + fb.id, "Received " + fb.mfg, "Expiry " + fb.expiry])}>Print label</button></div>
                 <div className="kv">
                   <Field k="Raw material" v={fb.product} /><Field k="Comes from" v={fb.source} />
-                  <Field k="Good quantity" v={`${fb.good} ${fb.unit || ""}`} /><Field k="Bad quantity" v={`${fb.bad} ${fb.unit || ""}`} />
-                  <Field k="Total in batch" v={`${fb.good + fb.bad} ${fb.unit || ""}`} /><Field k="Available to ship" v={`${availOf(fb)} ${fb.unit || ""}`} /><Field k="Shipped to customers" v={`${shippedOf(fb.id)} ${fb.unit || ""}`} /><Field k="Customers reached" v={new Set(ships.filter((x) => x.batchId === fb.id).map((x) => x.company)).size} /><Field k="AI inspection" v={fb.inspection ? `${fb.inspection.total} items checked, yield ${fb.inspection.yield ?? "-"}%, confidence ${fb.inspection.confidence}` : "Not done"} />
-                  <Field k="Receiving date" v={fb.mfg} /><Field k="Expiry date" v={fb.expiry ? `${fb.expiry} (${expiry(fb.expiry)})` : ""} />
+                  <Field k="Good quantity" v={${fb.good} ${fb.unit || ""}} /><Field k="Bad quantity" v={${fb.bad} ${fb.unit || ""}} />
+                  <Field k="Total in batch" v={${fb.good + fb.bad} ${fb.unit || ""}} /><Field k="Available to ship" v={${availOf(fb)} ${fb.unit || ""}} /><Field k="Shipped to customers" v={${shippedOf(fb.id)} ${fb.unit || ""}} /><Field k="Customers reached" v={new Set(ships.filter((x) => x.batchId === fb.id).map((x) => x.company)).size} /><Field k="AI inspection" v={fb.inspection ? ${fb.inspection.total} items checked, yield ${fb.inspection.yield ?? "-"}%, confidence ${fb.inspection.confidence} : "Not done"} />
+                  <Field k="Receiving date" v={fb.mfg} /><Field k="Expiry date" v={fb.expiry ? ${fb.expiry} (${expiry(fb.expiry)}) : ""} />
                   <Field k="Receiving incidents" v={fb.incidents} /><Field k="Production barcode" v={fb.prod?.id} /><Field k="Production line" v={fb.prod?.line} /><Field k="Manufacturing date" v={fb.prod?.date} /><Field k="Production incidents" v={fb.prod?.incidents} />
                 </div>
                 <h2>Forward trace: who received this batch</h2>
@@ -690,8 +852,8 @@ export default function Home() {
                   <Field k="Production line" v={fp.prod.line} /><Field k="Manufacturing date" v={fp.prod.date} />
                   <Field k="Production incidents" v={fp.prod.incidents} /><Field k="Raw material" v={fp.product} />
                   <Field k="Comes from" v={fp.source} /><Field k="Receiving date" v={fp.mfg} />
-                  <Field k="Expiry date" v={fp.expiry ? `${fp.expiry} (${expiry(fp.expiry)})` : ""} />
-                  <Field k="Good / bad" v={`${fp.good} / ${fp.bad} ${fp.unit || ""}`} />
+                  <Field k="Expiry date" v={fp.expiry ? ${fp.expiry} (${expiry(fp.expiry)}) : ""} />
+                  <Field k="Good / bad" v={${fp.good} / ${fp.bad} ${fp.unit || ""}} />
                 </div>
                 <p className="mute">Source batch: <a href="#" onClick={(e) => { e.preventDefault(); setQ(fp.id); }}>{fp.id}</a></p>
               </div>
@@ -715,4 +877,3 @@ export default function Home() {
     </>
   );
 }
-
