@@ -63,7 +63,7 @@ const expiry = (d: string) => {
 };
 
 export default function Home() {
-  const [tab, setTab] = useState("Batches");
+  const [tab, setTab] = useState("AI Inspection");
   const [batches, setBatches] = useState<any[]>([]);
   const [ships, setShips] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
@@ -76,13 +76,14 @@ export default function Home() {
   const [note, setNote] = useState("");
   const blankSale = { customer: "", address: "", batchId: "", qty: "", price: "" };
   const [sf, setSf] = useState<any>(blankSale);
-  const [insBatch, setInsBatch] = useState("");
   const [insFile, setInsFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const [result, setResult] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [insErr, setInsErr] = useState("");
   const [inv, setInv] = useState<any>({ batchId: "", source: "", good: "", bad: "", expiry: "" });
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const [prod, setProd] = useState<any>({ batchId: "", line: "LINE-01", date: "", incidents: "" });
 
   useEffect(() => {
     try {
@@ -101,16 +102,20 @@ export default function Home() {
   const go = (code: string) => { setQ(code); setTab("Traceability"); setMsg(""); };
 
   const addBatch = () => {
+    setJustAdded(null);
     const id = clean(bf.id) || `B${day()}${String(batches.length + 1).padStart(3, "0")}`;
     if (!bf.product.trim()) return setMsg("Enter the raw material name.");
     if (batches.some((b) => b.id === id)) return setMsg("That batch barcode already exists.");
     const b = {
-      id, product: bf.product.trim(), source: "", unit: bf.unit.trim() || "units", good: 0, bad: 0,
-      incidents: bf.incidents.trim(), mfg: bf.mfg, temp: bf.temp, expiry: "", created: new Date().toISOString(),
+      id, product: bf.product.trim(), source: "", unit: bf.unit.trim() || "units", good: result ? result.good_products : 0, bad: result ? result.bad_products : 0,
+      inspection: result ? { time: new Date().toISOString(), total: result.total_products, defects: result.defects, confidence: result.confidence, mode: result.mode } : undefined,
+      incidents: bf.incidents.trim(), mfg: bf.mfg, expiry: "", created: new Date().toISOString(),
     };
     persist([b, ...batches], ships);
     setBf(blank);
-    setMsg(`Batch received. Its barcode is ${id}. Next: run AI Inspection or fill in the Inventory tab.`);
+    setJustAdded(id);
+    setMsg(`Barcode ${id} generated for ${b.product}.${result ? ` AI counts attached: ${result.good_products} good, ${result.bad_products} bad.` : ""}`);
+    setResult(null); pickFile(null);
   };
 
   const createShips = () => {
@@ -137,24 +142,16 @@ export default function Home() {
     setPreview(f ? URL.createObjectURL(f) : "");
   };
   const runInspection = async () => {
-    if (!insFile || !insBatch) return;
+    if (!insFile) return;
     setBusy(true); setInsErr("");
     try {
       const fd = new FormData();
-      fd.append("image", insFile); fd.append("batch_id", insBatch);
+      fd.append("image", insFile); fd.append("batch_id", "PENDING");
       const r = await fetch("/api/inspect", { method: "POST", body: fd });
       if (!r.ok) throw new Error("API error " + r.status);
       setResult(await r.json());
     } catch (e: any) { setInsErr(e.message); }
     setBusy(false);
-  };
-  const applyInspection = () => {
-    if (!result) return;
-    if (result.good_products < shippedOf(insBatch)) return setMsg(`Already shipped ${shippedOf(insBatch)}, which is more than the ${result.good_products} good items found.`);
-    persist(batches.map((b) => b.id === insBatch ? { ...b, good: result.good_products, bad: result.bad_products,
-      inspection: { time: new Date().toISOString(), total: result.total_products, defects: result.defects, confidence: result.confidence, mode: result.mode } } : b), ships);
-    setMsg(`Inspection saved to batch ${insBatch}: ${result.good_products} good, ${result.bad_products} bad. See the Inventory tab.`);
-    setResult(null); pickFile(null);
   };
   const pickInv = (id: string) => {
     const b = batches.find((x) => x.id === id);
@@ -166,7 +163,19 @@ export default function Home() {
     const good = +inv.good || 0;
     if (good < shippedOf(b.id)) return setMsg(`Good quantity can't be lower than the ${shippedOf(b.id)} already shipped.`);
     persist(batches.map((x) => x.id === b.id ? { ...x, source: inv.source.trim(), good, bad: +inv.bad || 0, expiry: inv.expiry } : x), ships);
-    setMsg(`Inventory updated for batch ${b.id}.`);
+    setMsg(`Inventory saved for batch ${b.id}. Now enter the production details.`);
+    pickProd(b.id); setTab("Production");
+  };
+
+  const pickProd = (id: string) => {
+    const b = batches.find((x) => x.id === id);
+    setProd({ batchId: id, line: b?.prod?.line || "LINE-01", date: b?.prod?.date || "", incidents: b?.prod?.incidents || "" });
+  };
+  const saveProd = () => {
+    const b = batches.find((x) => x.id === prod.batchId);
+    if (!b) return setMsg("Select a batch first.");
+    persist(batches.map((x) => x.id === b.id ? { ...x, prod: { line: prod.line, date: prod.date, incidents: prod.incidents.trim(), time: new Date().toISOString() } } : x), ships);
+    setMsg(`Production details saved for batch ${b.id}.`);
   };
 
   const createSale = () => {
@@ -246,14 +255,14 @@ export default function Home() {
           placeholder="Search or scan any barcode: batch, shipment or invoice (name search also works)" />
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {["Batches", "AI Inspection", "Inventory", "Shipping", "Sales", "Traceability"].map((t) => (
+          {["AI Inspection", "Batches", "Inventory", "Production", "Shipping", "Sales", "Traceability"].map((t) => (
             <button key={t} onClick={() => { setTab(t); setMsg(""); }}
               style={{ width: "auto", marginTop: 0, background: tab === t ? "var(--acc)" : "var(--card)", color: tab === t ? "#fff" : "var(--ink)", border: "1px solid var(--line)" }}>
               {t}
             </button>
           ))}
         </div>
-        {msg && <div className="card" style={{ borderColor: "var(--acc)" }}>{msg}</div>}
+        {msg && tab !== "Batches" && <div className="card" style={{ borderColor: "var(--acc)" }}>{msg}</div>}
 
         {tab === "Batches" && (
           <>
@@ -263,23 +272,34 @@ export default function Home() {
                 <div><label>Raw material name</label><input value={bf.product} onChange={(e) => up("product", e.target.value)} placeholder="e.g. Tomatoes" /></div>
                 <div><label>Unit (kg, litre, pcs...)</label><input value={bf.unit} onChange={(e) => up("unit", e.target.value)} /></div>
                 <div><label>Receiving date</label><input type="date" value={bf.mfg} onChange={(e) => up("mfg", e.target.value)} /></div>
-                <div><label>Room temperature (°C)</label><input type="number" value={bf.temp} onChange={(e) => up("temp", e.target.value)} /></div>
                 <div><label>Batch number (optional, auto if empty)</label><input value={bf.id} onChange={(e) => up("id", e.target.value)} placeholder="B260930001" /></div>
               </div>
-              <label className="lbl">Incidents (spills, delays, equipment faults, complaints...)</label>
+              <label className="lbl">Receiving incidents (damage, delays, complaints...)</label>
               <textarea rows={2} value={bf.incidents} onChange={(e) => up("incidents", e.target.value)} />
-              <button onClick={addBatch}>Save batch &amp; generate barcode</button>
+              <button onClick={addBatch}>Generate barcode</button>
+              {msg && (
+                <div style={{ marginTop: 12 }}>
+                  <p className={justAdded ? "" : "bad"}>{msg}</p>
+                  {justAdded && (
+                    <>
+                      <Barcode value={justAdded} />
+                      <button onClick={() => { pickInv(justAdded); setTab("Inventory"); setMsg(""); }}>Proceed to Inventory</button>
+                    </>
+                  )}
+                </div>
+              )}
+              {result && !msg && <p className="mute">AI inspection ready: {result.good_products} good, {result.bad_products} bad. These counts will be attached to the new batch.</p>}
             </section>
             <section className="card">
               <h2>Received batches</h2>
               {batches.length === 0 ? <p className="mute">No batches yet.</p> : (
                 <div style={{ overflowX: "auto" }}>
                   <table>
-                    <thead><tr><th>Barcode</th><th>Raw material</th><th>Receiving date</th><th>Temp</th><th>Incidents</th><th>Inspection</th><th></th></tr></thead>
+                    <thead><tr><th>Barcode</th><th>Raw material</th><th>Receiving date</th><th>Incidents</th><th>Inspection</th><th></th></tr></thead>
                     <tbody>
                       {batches.map((b) => (
                         <tr key={b.id}>
-                          <td>{b.id}</td><td>{b.product}</td><td>{b.mfg || "-"}</td><td>{b.temp ? b.temp + "°C" : "-"}</td><td>{b.incidents || "-"}</td><td><span className="tag">{b.inspection ? "Inspected" : "Pending"}</span></td><td><button className="sm" onClick={() => go(b.id)}>View barcode</button></td>
+                          <td>{b.id}</td><td>{b.product}</td><td>{b.mfg || "-"}</td><td>{b.incidents || "-"}</td><td><span className="tag">{b.inspection ? "Inspected" : "Pending"}</span></td><td><button className="sm" onClick={() => go(b.id)}>View barcode</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -294,15 +314,9 @@ export default function Home() {
           <div className="grid">
             <section className="card">
               <h2>1. Upload an image of the received batch</h2>
-              <label className="lbl">Batch</label>
-              <select value={insBatch} onChange={(e) => setInsBatch(e.target.value)}>
-                <option value="">Select batch</option>
-                {batches.map((b) => <option key={b.id} value={b.id}>{b.id} · {b.product}</option>)}
-              </select>
               <input type="file" accept="image/*" style={{ marginTop: 10 }} onChange={(e) => pickFile(e.target.files?.[0] || null)} />
-              <button disabled={!insFile || !insBatch || busy} onClick={runInspection}>{busy ? "Inspecting…" : "Run AI inspection"}</button>
+              <button disabled={!insFile || busy} onClick={runInspection}>{busy ? "Inspecting…" : "Run AI inspection"}</button>
               {insErr && <p className="bad">{insErr}</p>}
-              {batches.length === 0 && <p className="mute">Receive a batch first in the Batches tab.</p>}
             </section>
             <section className="card">
               <h2>2. Result</h2>
@@ -327,7 +341,7 @@ export default function Home() {
                     <div className="stat"><b>{result.yield_pct}%</b><span>Yield</span></div>
                   </div>
                   <p className="mute">Defects: {Object.keys(result.defects).length ? Object.entries(result.defects).map(([k, v]) => `${k} ×${v}`).join(", ") : "none"} · confidence {result.confidence} · mode <span className="tag">{result.mode}</span></p>
-                  <button onClick={applyInspection}>Save good / bad counts to inventory</button>
+                  <button onClick={() => { setTab("Batches"); setMsg(""); }}>Proceed to Batches</button>
                 </>
               )}
             </section>
@@ -349,8 +363,8 @@ export default function Home() {
                 <div><label>Good quantity</label><input type="number" min="0" value={inv.good} onChange={(e) => setInv({ ...inv, good: e.target.value })} /></div>
                 <div><label>Bad quantity</label><input type="number" min="0" value={inv.bad} onChange={(e) => setInv({ ...inv, bad: e.target.value })} /></div>
               </div>
-              <button onClick={saveInv}>Save to inventory</button>
-              <p className="mute">Tip: AI Inspection can fill the good and bad counts for you.</p>
+              <button onClick={saveInv}>Submit</button>
+              <p className="mute">Submit saves this inventory record and takes you to Production.</p>
             </section>
             <section className="card">
               <h2>Inventory</h2>
@@ -366,6 +380,48 @@ export default function Home() {
                           <td>{b.mfg || "-"}</td>
                           <td>{b.expiry || "-"} <span className="tag">{expiry(b.expiry)}</span></td>
                           <td><button className="sm" onClick={() => pickInv(b.id)}>Edit</button> <button className="sm" onClick={() => go(b.id)}>Barcode</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {tab === "Production" && (
+          <>
+            <section className="card">
+              <h2>Production details for a batch</h2>
+              <label className="lbl">Batch</label>
+              <select value={prod.batchId} onChange={(e) => pickProd(e.target.value)}>
+                <option value="">Select batch</option>
+                {batches.map((b) => <option key={b.id} value={b.id}>{b.id} · {b.product}</option>)}
+              </select>
+              <div className="f" style={{ marginTop: 10 }}>
+                <div><label>Production line</label>
+                  <select value={prod.line} onChange={(e) => setProd({ ...prod, line: e.target.value })}>
+                    {["LINE-01", "LINE-02", "LINE-03"].map((l) => <option key={l}>{l}</option>)}
+                  </select></div>
+                <div><label>Production date</label><input type="date" value={prod.date} onChange={(e) => setProd({ ...prod, date: e.target.value })} /></div>
+              </div>
+              <label className="lbl">Incidents during production (breakdowns, contamination, delays...)</label>
+              <textarea rows={3} value={prod.incidents} onChange={(e) => setProd({ ...prod, incidents: e.target.value })} />
+              <button onClick={saveProd}>Submit</button>
+            </section>
+            <section className="card">
+              <h2>Production records</h2>
+              {batches.length === 0 ? <p className="mute">No batches yet.</p> : (
+                <div style={{ overflowX: "auto" }}>
+                  <table>
+                    <thead><tr><th>Barcode</th><th>Raw material</th><th>Line</th><th>Production date</th><th>Incidents</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                      {batches.map((b) => (
+                        <tr key={b.id}>
+                          <td>{b.id}</td><td>{b.product}</td><td>{b.prod?.line || "-"}</td><td>{b.prod?.date || "-"}</td><td>{b.prod?.incidents || "-"}</td>
+                          <td><span className="tag">{b.prod ? "Produced" : "Pending"}</span></td>
+                          <td><button className="sm" onClick={() => pickProd(b.id)}>Edit</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -502,7 +558,7 @@ export default function Home() {
                   <Field k="Good quantity" v={`${fb.good} ${fb.unit || ""}`} /><Field k="Bad quantity" v={`${fb.bad} ${fb.unit || ""}`} />
                   <Field k="Total in batch" v={`${fb.good + fb.bad} ${fb.unit || ""}`} /><Field k="Available to ship" v={`${availOf(fb)} ${fb.unit || ""}`} /><Field k="Shipped to customers" v={`${shippedOf(fb.id)} ${fb.unit || ""}`} /><Field k="Customers reached" v={new Set(ships.filter((x) => x.batchId === fb.id).map((x) => x.company)).size} /><Field k="AI inspection" v={fb.inspection ? `${fb.inspection.total} items checked, confidence ${fb.inspection.confidence}` : "Not done"} />
                   <Field k="Receiving date" v={fb.mfg} /><Field k="Expiry date" v={fb.expiry ? `${fb.expiry} (${expiry(fb.expiry)})` : ""} />
-                  <Field k="Room temperature" v={fb.temp ? fb.temp + " °C" : ""} /><Field k="Incidents" v={fb.incidents} />
+                  <Field k="Receiving incidents" v={fb.incidents} /><Field k="Production line" v={fb.prod?.line} /><Field k="Production date" v={fb.prod?.date} /><Field k="Production incidents" v={fb.prod?.incidents} />
                 </div>
                 <h2>Forward trace: who received this batch</h2>
                 <button className="sm" style={{ marginBottom: 8 }} onClick={() => printReport("Recall report: " + fb.id + " " + fb.product, ["Company", "Destination", "Qty", "Invoice", "Shipment", "Status"], ships.filter((x) => x.batchId === fb.id).map((x) => [x.company, x.address || "-", x.qty, x.saleId || "-", x.id, x.status]))}>Print recall report</button>
@@ -530,8 +586,8 @@ export default function Home() {
                   <Field k="Quantity" v={fs.qty} /><Field k="Status" v={fs.status} />
                   <Field k="Raw material" v={parent?.product} />
                   <Field k="Comes from" v={parent?.source} /><Field k="Receiving date" v={parent?.mfg} />
-                  <Field k="Expiry date" v={parent?.expiry} /><Field k="Room temperature" v={parent?.temp ? parent.temp + " °C" : ""} />
-                  <Field k="Incidents" v={parent?.incidents} /><Field k="Invoice" v={fs.saleId} />
+                  <Field k="Expiry date" v={parent?.expiry} /><Field k="Production line" v={parent?.prod?.line} />
+                  <Field k="Receiving incidents" v={parent?.incidents} /><Field k="Production incidents" v={parent?.prod?.incidents} /><Field k="Invoice" v={fs.saleId} />
                   <Field k="Sale value" v={sale ? sale.total.toFixed(2) : ""} />
                 </div>
                 <p><b>{parent?.source || "Source"}</b> → batch {fs.batchId} → shipment {fs.id} → <b>{fs.company}</b></p>
