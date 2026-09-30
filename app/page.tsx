@@ -81,12 +81,12 @@ export default function Home() {
   const [result, setResult] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [insErr, setInsErr] = useState("");
-  const [inv, setInv] = useState<any>({ batchId: "", source: "", good: "", bad: "", expiry: "" });
+  const [inv, setInv] = useState<any>({ batchId: "", source: "", good: "", bad: "", recDate: "" });
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [prodDone, setProdDone] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [showN, setShowN] = useState(true);
-  const [prod, setProd] = useState<any>({ batchId: "", line: "LINE-01", date: "", incidents: "" });
+  const [prod, setProd] = useState<any>({ batchId: "", line: "LINE-01", date: "", expiry: "", incidents: "" });
 
   useEffect(() => {
     try {
@@ -168,29 +168,30 @@ export default function Home() {
   };
   const pickInv = (id: string) => {
     const b = batches.find((x) => x.id === id);
-    setInv({ batchId: id, source: b?.source || "", good: b ? String(b.good) : "", bad: b ? String(b.bad) : "", expiry: b?.expiry || "" });
+    setInv({ batchId: id, source: b?.source || "", good: b ? String(b.good) : "", bad: b ? String(b.bad) : "", recDate: b?.mfg || "" });
   };
   const saveInv = () => {
     const b = batches.find((x) => x.id === inv.batchId);
     if (!b) return setMsg("Select a batch first.");
     const good = +inv.good || 0;
     if (good < shippedOf(b.id)) return setMsg(`Good quantity can't be lower than the ${shippedOf(b.id)} already shipped.`);
-    persist(batches.map((x) => x.id === b.id ? { ...x, source: inv.source.trim(), good, bad: +inv.bad || 0, expiry: inv.expiry } : x), ships);
-    setMsg(`Inventory saved for batch ${b.id}.${inv.expiry && expiry(inv.expiry) !== "Valid" ? " Warning: " + expiry(inv.expiry) + "." : ""} Now enter the production details.`);
+    persist(batches.map((x) => x.id === b.id ? { ...x, source: inv.source.trim(), good, bad: +inv.bad || 0, mfg: inv.recDate } : x), ships);
+    setMsg(`Inventory saved for batch ${b.id}. Now enter the production details.`);
     pickProd(b.id); setTab("Production");
   };
 
   const pickProd = (id: string) => {
     setProdDone(null);
     const b = batches.find((x) => x.id === id);
-    setProd({ batchId: id, line: b?.prod?.line || "LINE-01", date: b?.prod?.date || "", incidents: b?.prod?.incidents || "" });
+    setProd({ batchId: id, line: b?.prod?.line || "LINE-01", date: b?.prod?.date || "", expiry: b?.expiry || "", incidents: b?.prod?.incidents || "" });
   };
   const saveProd = () => {
     setProdDone(null);
     const b = batches.find((x) => x.id === prod.batchId);
     if (!b) return setMsg("Select a batch first.");
+    if (prod.date && prod.expiry && prod.expiry < prod.date) return setMsg("Expiry date must be after the manufacturing date.");
     const pid = b.prod?.id || `PRD${day()}${String(batches.filter((x) => x.prod?.id).length + 1).padStart(3, "0")}`;
-    persist(batches.map((x) => x.id === b.id ? { ...x, prod: { id: pid, line: prod.line, date: prod.date, incidents: prod.incidents.trim(), time: new Date().toISOString() } } : x), ships);
+    persist(batches.map((x) => x.id === b.id ? { ...x, expiry: prod.expiry, prod: { id: pid, line: prod.line, date: prod.date, incidents: prod.incidents.trim(), time: new Date().toISOString() } } : x), ships);
     setProdDone(pid);
     setMsg(`Production barcode ${pid} generated for batch ${b.id}.`);
   };
@@ -421,7 +422,7 @@ export default function Home() {
               </select>
               <div className="f" style={{ marginTop: 10 }}>
                 <div><label>Comes from (supplier / farm / origin)</label><input value={inv.source} onChange={(e) => setInv({ ...inv, source: e.target.value })} /></div>
-                <div><label>Expiry date</label><input type="date" value={inv.expiry} onChange={(e) => setInv({ ...inv, expiry: e.target.value })} /></div>
+                <div><label>Material receiving date</label><input type="date" value={inv.recDate} onChange={(e) => setInv({ ...inv, recDate: e.target.value })} /></div>
                 <div><label>Good quantity</label><input type="number" min="0" value={inv.good} onChange={(e) => setInv({ ...inv, good: e.target.value })} /></div>
                 <div><label>Bad quantity</label><input type="number" min="0" value={inv.bad} onChange={(e) => setInv({ ...inv, bad: e.target.value })} /></div>
               </div>
@@ -433,14 +434,13 @@ export default function Home() {
               {batches.length === 0 ? <p className="mute">No batches yet.</p> : (
                 <div style={{ overflowX: "auto" }}>
                   <table>
-                    <thead><tr><th>Barcode</th><th>Raw material</th><th>Comes from</th><th>Good</th><th>Bad</th><th>Total</th><th>Available</th><th>Receiving date</th><th>Expiry</th><th></th></tr></thead>
+                    <thead><tr><th>Barcode</th><th>Raw material</th><th>Comes from</th><th>Good</th><th>Bad</th><th>Total</th><th>Available</th><th>Material receiving date</th><th></th></tr></thead>
                     <tbody>
                       {batches.map((b) => (
                         <tr key={b.id}>
                           <td>{b.id}</td><td>{b.product}</td><td>{b.source || "-"}</td>
                           <td className="good">{b.good} {b.unit}</td><td className="bad">{b.bad} {b.unit}</td><td>{b.good + b.bad} {b.unit}</td><td>{availOf(b)} {b.unit}</td>
                           <td>{b.mfg || "-"}</td>
-                          <td>{b.expiry || "-"} <span className="tag">{expiry(b.expiry)}</span></td>
                           <td><button className="sm" onClick={() => pickInv(b.id)}>Edit</button> <button className="sm" onClick={() => go(b.id)}>Barcode</button></td>
                         </tr>
                       ))}
@@ -466,7 +466,8 @@ export default function Home() {
                   <select value={prod.line} onChange={(e) => setProd({ ...prod, line: e.target.value })}>
                     {["LINE-01", "LINE-02", "LINE-03"].map((l) => <option key={l}>{l}</option>)}
                   </select></div>
-                <div><label>Production date</label><input type="date" value={prod.date} onChange={(e) => setProd({ ...prod, date: e.target.value })} /></div>
+                <div><label>Manufacturing date</label><input type="date" value={prod.date} onChange={(e) => setProd({ ...prod, date: e.target.value })} /></div>
+                <div><label>Expiry date</label><input type="date" value={prod.expiry} onChange={(e) => setProd({ ...prod, expiry: e.target.value })} /></div>
               </div>
               <label className="lbl">Incidents during production (breakdowns, contamination, delays...)</label>
               <textarea rows={3} value={prod.incidents} onChange={(e) => setProd({ ...prod, incidents: e.target.value })} />
@@ -484,11 +485,11 @@ export default function Home() {
               {batches.length === 0 ? <p className="mute">No batches yet.</p> : (
                 <div style={{ overflowX: "auto" }}>
                   <table>
-                    <thead><tr><th>Batch barcode</th><th>Production barcode</th><th>Raw material</th><th>Line</th><th>Production date</th><th>Incidents</th><th>Status</th><th></th></tr></thead>
+                    <thead><tr><th>Batch barcode</th><th>Production barcode</th><th>Raw material</th><th>Line</th><th>Manufacturing date</th><th>Expiry</th><th>Incidents</th><th>Status</th><th></th></tr></thead>
                     <tbody>
                       {batches.map((b) => (
                         <tr key={b.id}>
-                          <td>{b.id}</td><td>{b.prod?.id ? <a href="#" onClick={(e) => { e.preventDefault(); go(b.prod.id); }}>{b.prod.id}</a> : "-"}</td><td>{b.product}</td><td>{b.prod?.line || "-"}</td><td>{b.prod?.date || "-"}</td><td>{b.prod?.incidents || "-"}</td>
+                          <td>{b.id}</td><td>{b.prod?.id ? <a href="#" onClick={(e) => { e.preventDefault(); go(b.prod.id); }}>{b.prod.id}</a> : "-"}</td><td>{b.product}</td><td>{b.prod?.line || "-"}</td><td>{b.prod?.date || "-"}</td><td>{b.expiry || "-"} {b.expiry && <span className="tag">{expiry(b.expiry)}</span>}</td><td>{b.prod?.incidents || "-"}</td>
                           <td><span className="tag">{b.prod ? "Produced" : "Pending"}</span></td>
                           <td><button className="sm" onClick={() => pickProd(b.id)}>Edit</button></td>
                         </tr>
@@ -627,7 +628,7 @@ export default function Home() {
                   <Field k="Good quantity" v={`${fb.good} ${fb.unit || ""}`} /><Field k="Bad quantity" v={`${fb.bad} ${fb.unit || ""}`} />
                   <Field k="Total in batch" v={`${fb.good + fb.bad} ${fb.unit || ""}`} /><Field k="Available to ship" v={`${availOf(fb)} ${fb.unit || ""}`} /><Field k="Shipped to customers" v={`${shippedOf(fb.id)} ${fb.unit || ""}`} /><Field k="Customers reached" v={new Set(ships.filter((x) => x.batchId === fb.id).map((x) => x.company)).size} /><Field k="AI inspection" v={fb.inspection ? `${fb.inspection.total} items checked, yield ${fb.inspection.yield ?? "-"}%, confidence ${fb.inspection.confidence}` : "Not done"} />
                   <Field k="Receiving date" v={fb.mfg} /><Field k="Expiry date" v={fb.expiry ? `${fb.expiry} (${expiry(fb.expiry)})` : ""} />
-                  <Field k="Receiving incidents" v={fb.incidents} /><Field k="Production barcode" v={fb.prod?.id} /><Field k="Production line" v={fb.prod?.line} /><Field k="Production date" v={fb.prod?.date} /><Field k="Production incidents" v={fb.prod?.incidents} />
+                  <Field k="Receiving incidents" v={fb.incidents} /><Field k="Production barcode" v={fb.prod?.id} /><Field k="Production line" v={fb.prod?.line} /><Field k="Manufacturing date" v={fb.prod?.date} /><Field k="Production incidents" v={fb.prod?.incidents} />
                 </div>
                 <h2>Forward trace: who received this batch</h2>
                 <button className="sm" style={{ marginBottom: 8 }} onClick={() => printReport("Recall report: " + fb.id + " " + fb.product, ["Company", "Destination", "Qty", "Invoice", "Shipment", "Status"], ships.filter((x) => x.batchId === fb.id).map((x) => [x.company, x.address || "-", x.qty, x.saleId || "-", x.id, x.status]))}>Print recall report</button>
@@ -684,9 +685,9 @@ export default function Home() {
                 <h2>Production {fp.prod.id}</h2>
                 <p><span className="tag">PRODUCTION</span> {fp.product} · line {fp.prod.line} · {fp.prod.date || "no date"}</p>
                 <Barcode value={fp.prod.id} />
-                <div><button className="sm" style={{ marginTop: 8 }} onClick={() => printLabel(fp.prod.id, ["Production " + fp.prod.id, fp.product, "Batch " + fp.id, "Line " + fp.prod.line, "Date " + fp.prod.date])}>Print label</button></div>
+                <div><button className="sm" style={{ marginTop: 8 }} onClick={() => printLabel(fp.prod.id, ["Production " + fp.prod.id, fp.product, "Batch " + fp.id, "Line " + fp.prod.line, "Mfg " + fp.prod.date])}>Print label</button></div>
                 <div className="kv">
-                  <Field k="Production line" v={fp.prod.line} /><Field k="Production date" v={fp.prod.date} />
+                  <Field k="Production line" v={fp.prod.line} /><Field k="Manufacturing date" v={fp.prod.date} />
                   <Field k="Production incidents" v={fp.prod.incidents} /><Field k="Raw material" v={fp.product} />
                   <Field k="Comes from" v={fp.source} /><Field k="Receiving date" v={fp.mfg} />
                   <Field k="Expiry date" v={fp.expiry ? `${fp.expiry} (${expiry(fp.expiry)})` : ""} />
