@@ -83,12 +83,16 @@ export default function Home() {
   const [insErr, setInsErr] = useState("");
   const [inv, setInv] = useState<any>({ batchId: "", source: "", good: "", bad: "", expiry: "" });
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  const [prodDone, setProdDone] = useState<string | null>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [showN, setShowN] = useState(true);
   const [prod, setProd] = useState<any>({ batchId: "", line: "LINE-01", date: "", incidents: "" });
 
   useEffect(() => {
     try {
       const d = JSON.parse(localStorage.getItem("erp_v2") || "{}");
       setBatches(d.b || []); setShips(d.s || []); setSales(d.v || []);
+      setAlerts(JSON.parse(localStorage.getItem("erp_alerts") || "[]"));
     } catch {}
   }, []);
 
@@ -101,14 +105,21 @@ export default function Home() {
   const up = (k: string, v: string) => setBf({ ...bf, [k]: v });
   const go = (code: string) => { setQ(code); setTab("Traceability"); setMsg(""); };
 
+  const saveAlerts = (next: any[]) => {
+    setAlerts(next);
+    try { localStorage.setItem("erp_alerts", JSON.stringify(next)); } catch {}
+  };
+  const addAlert = (text: string) => saveAlerts([{ id: Date.now(), text, time: new Date().toISOString() }, ...alerts].slice(0, 30));
+
   const addBatch = () => {
     setJustAdded(null);
+    if (result && result.yield_pct < 25) return setMsg("The AI yield is below 25%, so this batch cannot be created. Discard the result and inspect again.");
     const id = clean(bf.id) || `B${day()}${String(batches.length + 1).padStart(3, "0")}`;
     if (!bf.product.trim()) return setMsg("Enter the raw material name.");
     if (batches.some((b) => b.id === id)) return setMsg("That batch barcode already exists.");
     const b = {
       id, product: bf.product.trim(), source: "", unit: bf.unit.trim() || "units", good: result ? result.good_products : 0, bad: result ? result.bad_products : 0,
-      inspection: result ? { time: new Date().toISOString(), total: result.total_products, defects: result.defects, confidence: result.confidence, mode: result.mode } : undefined,
+      inspection: result ? { time: new Date().toISOString(), total: result.total_products, yield: result.yield_pct, defects: result.defects, confidence: result.confidence, mode: result.mode } : undefined,
       incidents: bf.incidents.trim(), mfg: bf.mfg, expiry: "", created: new Date().toISOString(),
     };
     persist([b, ...batches], ships);
@@ -149,7 +160,9 @@ export default function Home() {
       fd.append("image", insFile); fd.append("batch_id", "PENDING");
       const r = await fetch("/api/inspect", { method: "POST", body: fd });
       if (!r.ok) throw new Error("API error " + r.status);
-      setResult(await r.json());
+      const data = await r.json();
+      setResult(data);
+      if (data.yield_pct < 25) addAlert(`AI inspection yield ${data.yield_pct}% is below 25% (${data.good_products} good, ${data.bad_products} bad). Batch cannot proceed.`);
     } catch (e: any) { setInsErr(e.message); }
     setBusy(false);
   };
@@ -163,19 +176,23 @@ export default function Home() {
     const good = +inv.good || 0;
     if (good < shippedOf(b.id)) return setMsg(`Good quantity can't be lower than the ${shippedOf(b.id)} already shipped.`);
     persist(batches.map((x) => x.id === b.id ? { ...x, source: inv.source.trim(), good, bad: +inv.bad || 0, expiry: inv.expiry } : x), ships);
-    setMsg(`Inventory saved for batch ${b.id}. Now enter the production details.`);
+    setMsg(`Inventory saved for batch ${b.id}.${inv.expiry && expiry(inv.expiry) !== "Valid" ? " Warning: " + expiry(inv.expiry) + "." : ""} Now enter the production details.`);
     pickProd(b.id); setTab("Production");
   };
 
   const pickProd = (id: string) => {
+    setProdDone(null);
     const b = batches.find((x) => x.id === id);
     setProd({ batchId: id, line: b?.prod?.line || "LINE-01", date: b?.prod?.date || "", incidents: b?.prod?.incidents || "" });
   };
   const saveProd = () => {
+    setProdDone(null);
     const b = batches.find((x) => x.id === prod.batchId);
     if (!b) return setMsg("Select a batch first.");
-    persist(batches.map((x) => x.id === b.id ? { ...x, prod: { line: prod.line, date: prod.date, incidents: prod.incidents.trim(), time: new Date().toISOString() } } : x), ships);
-    setMsg(`Production details saved for batch ${b.id}.`);
+    const pid = b.prod?.id || `PRD${day()}${String(batches.filter((x) => x.prod?.id).length + 1).padStart(3, "0")}`;
+    persist(batches.map((x) => x.id === b.id ? { ...x, prod: { id: pid, line: prod.line, date: prod.date, incidents: prod.incidents.trim(), time: new Date().toISOString() } } : x), ships);
+    setProdDone(pid);
+    setMsg(`Production barcode ${pid} generated for batch ${b.id}.`);
   };
 
   const createSale = () => {
@@ -205,6 +222,7 @@ export default function Home() {
 
   const codes = [
     ...batches.map((b) => ({ code: b.id, kind: "Batch", label: `${b.product} ${b.source || ""}` })),
+    ...batches.filter((b) => b.prod?.id).map((b) => ({ code: b.prod.id, kind: "Production", label: `${b.product} ${b.prod.line}` })),
     ...ships.map((x) => ({ code: x.id, kind: "Shipment", label: x.company })),
     ...sales.map((v) => ({ code: v.id, kind: "Invoice", label: v.customer })),
   ];
@@ -213,12 +231,15 @@ export default function Home() {
   const matches = qc ? codes.filter((c) => c.code.toLowerCase().includes(qc) || c.label.toLowerCase().includes(ql)) : [];
   const key = codes.some((c) => c.code === clean(q)) ? clean(q) : matches.length === 1 ? matches[0].code : clean(q);
   const fb = batches.find((b) => b.id === key);
+  const fp = !fb ? batches.find((b) => b.prod?.id === key) : null;
   const fv = !fb ? sales.find((v) => v.id === key) : null;
   const fs = !fb ? ships.find((s) => s.id === key || (fv && s.id === fv.shipId)) : null;
   const sale = fs && fs.saleId ? sales.find((v) => v.id === fs.saleId) : null;
   const parent = fs ? batches.find((b) => b.id === fs.batchId) : null;
   const tGood = batches.reduce((a, b) => a + b.good, 0);
   const tBad = batches.reduce((a, b) => a + b.bad, 0);
+  const expNotes = batches.filter((b) => b.expiry && expiry(b.expiry) !== "Valid");
+  const nCount = alerts.length + expNotes.length;
   const revenue = sales.reduce((a, v) => a + v.total, 0);
   const byCust: Record<string, any> = {};
   sales.forEach((v) => { const c = byCust[v.customer] || (byCust[v.customer] = { qty: 0, total: 0, n: 0 }); c.qty += v.qty; c.total += v.total; c.n++; });
@@ -240,7 +261,7 @@ export default function Home() {
       <header>
         <h1>Cloud ERP · Batch &amp; Shipment Barcodes</h1>
         <button className="sm" style={{ background: "var(--bad)" }}
-          onClick={() => { if (confirm("Clear all data?")) persist([], [], []); }}>Reset data</button>
+          onClick={() => { if (confirm("Clear all data?")) { persist([], [], []); setAlerts([]); try { localStorage.removeItem("erp_alerts"); } catch {} } }}>Reset data</button>
       </header>
       <main>
         <div className="stats" style={{ marginBottom: 0 }}>
@@ -254,6 +275,30 @@ export default function Home() {
           onChange={(e) => { setQ(e.target.value); if (e.target.value.trim()) { setTab("Traceability"); setMsg(""); } }}
           placeholder="Search or scan any barcode: batch, shipment or invoice (name search also works)" />
 
+        {nCount > 0 && (
+          <div className="card" style={{ borderColor: "var(--bad)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <b>🔔 Notifications ({nCount})</b>
+              <button className="sm" onClick={() => setShowN(!showN)}>{showN ? "Hide" : "Show"}</button>
+            </div>
+            {showN && (
+              <div style={{ marginTop: 8 }}>
+                {alerts.map((a) => (
+                  <div key={a.id} className="bad" style={{ marginBottom: 6 }}>
+                    ⚠ {a.text} <span className="mute">{new Date(a.time).toLocaleString()}</span>{" "}
+                    <button className="sm" onClick={() => saveAlerts(alerts.filter((x) => x.id !== a.id))}>Dismiss</button>
+                  </div>
+                ))}
+                {expNotes.map((b) => (
+                  <div key={b.id} style={{ marginBottom: 6 }}>
+                    ⏰ Batch <a href="#" onClick={(e) => { e.preventDefault(); go(b.id); }}>{b.id}</a> · {b.product}: <b>{expiry(b.expiry)}</b> (expiry {b.expiry})
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {["AI Inspection", "Batches", "Inventory", "Production", "Shipping", "Sales", "Traceability"].map((t) => (
             <button key={t} onClick={() => { setTab(t); setMsg(""); }}
@@ -262,7 +307,7 @@ export default function Home() {
             </button>
           ))}
         </div>
-        {msg && tab !== "Batches" && <div className="card" style={{ borderColor: "var(--acc)" }}>{msg}</div>}
+        {msg && tab !== "Batches" && !(tab === "Production" && prodDone) && <div className="card" style={{ borderColor: "var(--acc)" }}>{msg}</div>}
 
         {tab === "Batches" && (
           <>
@@ -288,7 +333,7 @@ export default function Home() {
                   )}
                 </div>
               )}
-              {result && !msg && <p className="mute">AI inspection ready: {result.good_products} good, {result.bad_products} bad. These counts will be attached to the new batch.</p>}
+              {result && !msg && <p className={result.yield_pct < 25 ? "bad" : "mute"}>AI inspection ready: {result.good_products} good, {result.bad_products} bad (yield {result.yield_pct}%). These counts will be attached to the new batch.</p>}
             </section>
             <section className="card">
               <h2>Received batches</h2>
@@ -341,7 +386,24 @@ export default function Home() {
                     <div className="stat"><b>{result.yield_pct}%</b><span>Yield</span></div>
                   </div>
                   <p className="mute">Defects: {Object.keys(result.defects).length ? Object.entries(result.defects).map(([k, v]) => `${k} ×${v}`).join(", ") : "none"} · confidence {result.confidence} · mode <span className="tag">{result.mode}</span></p>
-                  <button onClick={() => { setTab("Batches"); setMsg(""); }}>Proceed to Batches</button>
+                  {result.yield_pct > 50 && (
+                    <>
+                      <p className="good"><b>Pass:</b> yield {result.yield_pct}% is above 50%. This batch can proceed.</p>
+                      <button onClick={() => { setTab("Batches"); setMsg(""); }}>Proceed to Batches</button>
+                    </>
+                  )}
+                  {result.yield_pct >= 25 && result.yield_pct <= 50 && (
+                    <>
+                      <p style={{ color: "#d97706" }}><b>Caution:</b> yield {result.yield_pct}% is between 25% and 50%. Review is needed before it proceeds.</p>
+                      <button onClick={() => { if (confirm("Yield is only " + result.yield_pct + "%. Proceed anyway?")) { setTab("Batches"); setMsg(""); } }}>Proceed anyway</button>
+                    </>
+                  )}
+                  {result.yield_pct < 25 && (
+                    <>
+                      <p className="bad"><b>Alert:</b> yield {result.yield_pct}% is below 25%. QC has been notified (see Notifications). This batch cannot proceed.</p>
+                      <button onClick={() => pickFile(null)}>Discard result &amp; re-upload</button>
+                    </>
+                  )}
                 </>
               )}
             </section>
@@ -409,17 +471,24 @@ export default function Home() {
               <label className="lbl">Incidents during production (breakdowns, contamination, delays...)</label>
               <textarea rows={3} value={prod.incidents} onChange={(e) => setProd({ ...prod, incidents: e.target.value })} />
               <button onClick={saveProd}>Submit</button>
+              {prodDone && msg && (
+                <div style={{ marginTop: 12 }}>
+                  <p>{msg}</p>
+                  <Barcode value={prodDone} />
+                  <button onClick={() => { setTab("Shipping"); setMsg(""); }}>Proceed to Shipping</button>
+                </div>
+              )}
             </section>
             <section className="card">
               <h2>Production records</h2>
               {batches.length === 0 ? <p className="mute">No batches yet.</p> : (
                 <div style={{ overflowX: "auto" }}>
                   <table>
-                    <thead><tr><th>Barcode</th><th>Raw material</th><th>Line</th><th>Production date</th><th>Incidents</th><th>Status</th><th></th></tr></thead>
+                    <thead><tr><th>Batch barcode</th><th>Production barcode</th><th>Raw material</th><th>Line</th><th>Production date</th><th>Incidents</th><th>Status</th><th></th></tr></thead>
                     <tbody>
                       {batches.map((b) => (
                         <tr key={b.id}>
-                          <td>{b.id}</td><td>{b.product}</td><td>{b.prod?.line || "-"}</td><td>{b.prod?.date || "-"}</td><td>{b.prod?.incidents || "-"}</td>
+                          <td>{b.id}</td><td>{b.prod?.id ? <a href="#" onClick={(e) => { e.preventDefault(); go(b.prod.id); }}>{b.prod.id}</a> : "-"}</td><td>{b.product}</td><td>{b.prod?.line || "-"}</td><td>{b.prod?.date || "-"}</td><td>{b.prod?.incidents || "-"}</td>
                           <td><span className="tag">{b.prod ? "Produced" : "Pending"}</span></td>
                           <td><button className="sm" onClick={() => pickProd(b.id)}>Edit</button></td>
                         </tr>
@@ -556,9 +625,9 @@ export default function Home() {
                 <div className="kv">
                   <Field k="Raw material" v={fb.product} /><Field k="Comes from" v={fb.source} />
                   <Field k="Good quantity" v={`${fb.good} ${fb.unit || ""}`} /><Field k="Bad quantity" v={`${fb.bad} ${fb.unit || ""}`} />
-                  <Field k="Total in batch" v={`${fb.good + fb.bad} ${fb.unit || ""}`} /><Field k="Available to ship" v={`${availOf(fb)} ${fb.unit || ""}`} /><Field k="Shipped to customers" v={`${shippedOf(fb.id)} ${fb.unit || ""}`} /><Field k="Customers reached" v={new Set(ships.filter((x) => x.batchId === fb.id).map((x) => x.company)).size} /><Field k="AI inspection" v={fb.inspection ? `${fb.inspection.total} items checked, confidence ${fb.inspection.confidence}` : "Not done"} />
+                  <Field k="Total in batch" v={`${fb.good + fb.bad} ${fb.unit || ""}`} /><Field k="Available to ship" v={`${availOf(fb)} ${fb.unit || ""}`} /><Field k="Shipped to customers" v={`${shippedOf(fb.id)} ${fb.unit || ""}`} /><Field k="Customers reached" v={new Set(ships.filter((x) => x.batchId === fb.id).map((x) => x.company)).size} /><Field k="AI inspection" v={fb.inspection ? `${fb.inspection.total} items checked, yield ${fb.inspection.yield ?? "-"}%, confidence ${fb.inspection.confidence}` : "Not done"} />
                   <Field k="Receiving date" v={fb.mfg} /><Field k="Expiry date" v={fb.expiry ? `${fb.expiry} (${expiry(fb.expiry)})` : ""} />
-                  <Field k="Receiving incidents" v={fb.incidents} /><Field k="Production line" v={fb.prod?.line} /><Field k="Production date" v={fb.prod?.date} /><Field k="Production incidents" v={fb.prod?.incidents} />
+                  <Field k="Receiving incidents" v={fb.incidents} /><Field k="Production barcode" v={fb.prod?.id} /><Field k="Production line" v={fb.prod?.line} /><Field k="Production date" v={fb.prod?.date} /><Field k="Production incidents" v={fb.prod?.incidents} />
                 </div>
                 <h2>Forward trace: who received this batch</h2>
                 <button className="sm" style={{ marginBottom: 8 }} onClick={() => printReport("Recall report: " + fb.id + " " + fb.product, ["Company", "Destination", "Qty", "Invoice", "Shipment", "Status"], ships.filter((x) => x.batchId === fb.id).map((x) => [x.company, x.address || "-", x.qty, x.saleId || "-", x.id, x.status]))}>Print recall report</button>
@@ -610,7 +679,24 @@ export default function Home() {
               </div>
             )}
 
-            {!fb && !fs && matches.length > 1 && (
+            {fp && (
+              <div>
+                <h2>Production {fp.prod.id}</h2>
+                <p><span className="tag">PRODUCTION</span> {fp.product} · line {fp.prod.line} · {fp.prod.date || "no date"}</p>
+                <Barcode value={fp.prod.id} />
+                <div><button className="sm" style={{ marginTop: 8 }} onClick={() => printLabel(fp.prod.id, ["Production " + fp.prod.id, fp.product, "Batch " + fp.id, "Line " + fp.prod.line, "Date " + fp.prod.date])}>Print label</button></div>
+                <div className="kv">
+                  <Field k="Production line" v={fp.prod.line} /><Field k="Production date" v={fp.prod.date} />
+                  <Field k="Production incidents" v={fp.prod.incidents} /><Field k="Raw material" v={fp.product} />
+                  <Field k="Comes from" v={fp.source} /><Field k="Receiving date" v={fp.mfg} />
+                  <Field k="Expiry date" v={fp.expiry ? `${fp.expiry} (${expiry(fp.expiry)})` : ""} />
+                  <Field k="Good / bad" v={`${fp.good} / ${fp.bad} ${fp.unit || ""}`} />
+                </div>
+                <p className="mute">Source batch: <a href="#" onClick={(e) => { e.preventDefault(); setQ(fp.id); }}>{fp.id}</a></p>
+              </div>
+            )}
+
+            {!fb && !fs && !fp && matches.length > 1 && (
               <div style={{ marginTop: 10 }}>
                 <p className="mute">{matches.length} matches. Pick one:</p>
                 {matches.slice(0, 8).map((c) => (
@@ -621,12 +707,11 @@ export default function Home() {
                 ))}
               </div>
             )}
-            {q.trim() && !fb && !fs && matches.length === 0 && <p className="bad">No batch, shipment or invoice found for “{q}”.</p>}
+            {q.trim() && !fb && !fs && !fp && matches.length === 0 && <p className="bad">No batch, production, shipment or invoice found for “{q}”.</p>}
           </section>
         )}
       </main>
     </>
   );
 }
-
 
